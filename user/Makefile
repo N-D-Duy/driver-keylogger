@@ -1,14 +1,24 @@
-CC = gcc
-CFLAGS = -Iinclude -Wall -O2
-TARGET = logkey_client
+CC      = gcc
+CFLAGS  = -Iinclude -Wall -O2
+LDFLAGS = 
 
-SRCS = src/main.c
-OBJS = $(SRCS:.c=.o)
+SRCDIR  = src
+OBJDIR  = obj
+TARGET  = logkey_client
+
+SRCS    := $(wildcard $(SRCDIR)/*.c)
+OBJS    := $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(SRCS))
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJDIR):
+	mkdir -p $(OBJDIR)
 
 clean:
-	rm -f $(TARGET) $(OBJS)
+	rm -rf $(TARGET) $(OBJDIR)

