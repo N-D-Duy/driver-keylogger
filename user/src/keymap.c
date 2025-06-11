@@ -1,12 +1,10 @@
 #include <string.h>
 #include "keymap.h"
 
-// Common modifier keys
 static const char *modifier_keys[] = {
     "[CTRL]", "[LSHIFT]", "[RSHIFT]", "[ALT]", "[CAPS]"
 };
 
-// Common key combinations and their actions
 static const struct key_combo known_combos[] = {
     {
         .keys = {"[CTRL]", "c"},
@@ -80,7 +78,6 @@ bool is_modifier_key(const char *key) {
 }
 
 const char *interpret_key_combo(const char *keys[], int count) {
-    // Check against known combinations
     for (size_t i = 0; i < sizeof(known_combos) / sizeof(known_combos[0]); i++) {
         if (known_combos[i].count != count) continue;
         
@@ -97,7 +94,6 @@ const char *interpret_key_combo(const char *keys[], int count) {
         }
     }
     
-    // If no exact match, try to make a reasonable guess
     if (count == 2 && is_modifier_key(keys[0])) {
         if (strcmp(keys[0], "[CTRL]") == 0) {
             return "Custom Ctrl+Key Combination";
@@ -108,5 +104,5 @@ const char *interpret_key_combo(const char *keys[], int count) {
         }
     }
     
-    return NULL;  // No interpretation available
+    return NULL;
 } 

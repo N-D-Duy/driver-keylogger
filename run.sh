@@ -11,8 +11,6 @@ make -C $KERNEL_DIR
 echo "[*] Inserting module..."
 sudo insmod $KERNEL_DIR/logkey.ko
 
-echo "[*] Module inserted. Check logs with: sudo cat /root/keyboard_log"
-
 read -p "[*] Press Enter to remove module..."
 
 echo "[*] Removing module..."

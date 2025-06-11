@@ -22,3 +22,5 @@ $(OBJDIR):
 
 clean:
 	rm -rf $(TARGET) $(OBJDIR)
+
+.PHONY: all clean
