@@ -56,3 +56,7 @@ int ringbuf_read(struct ring_buffer *rb, char *out, size_t maxlen) {
 bool ringbuf_is_empty(struct ring_buffer *rb) {
     return rb->head == rb->tail;
 }
+
+void ringbuf_clear(struct ring_buffer *rb) {
+    rb->head = rb->tail = 0;
+}

