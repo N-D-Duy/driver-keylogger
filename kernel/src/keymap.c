@@ -67,8 +67,7 @@ static const char *us_keymap[][2] = {
 size_t keycode_to_us_string(int keycode, int shift, char *buffer, size_t buff_size) {
     memset(buffer, 0, buff_size);
     
-    // Handle special keycodes
-    if (keycode >= 0xE000) {  // Special keycodes start at 0xE000
+    if (keycode >= 0xE000) {
         switch (keycode) {
             case 0xE000: strncpy(buffer, "[LEFT]", buff_size - 1); break;
             case 0xE001: strncpy(buffer, "[RIGHT]", buff_size - 1); break;
