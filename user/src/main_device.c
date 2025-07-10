@@ -23,50 +23,8 @@ void handle_sigint(int sig) {
     printf("\nExiting program...\n");
 }
 
-void process_key_combination(void) {
-    if (key_count > 0) {
-        const char *action = interpret_key_combo((const char **)key_buffer, key_count);
-        if (action) {
-            char output[256];
-            snprintf(output, sizeof(output), "Action: %s (from keys: ", action);
-            for (int i = 0; i < key_count; i++) {
-                strncat(output, key_buffer[i], sizeof(output) - strlen(output) - 1);
-                if (i < key_count - 1) {
-                    strncat(output, "+", sizeof(output) - strlen(output) - 1);
-                }
-            }
-            strncat(output, ")\n", sizeof(output) - strlen(output) - 1);
-            logger_write(output);
-            
-            // Send to network server
-            // if (network_client_send(output, strlen(output)) < 0) {
-            //     fprintf(stderr, "Failed to send action to server\n");
-            // }
-        } else {
-            // If no interpretation available, log the raw keys
-            char output[256] = "Keys: ";
-            for (int i = 0; i < key_count; i++) {
-                strncat(output, key_buffer[i], sizeof(output) - strlen(output) - 1);
-                if (i < key_count - 1) {
-                    strncat(output, "+", sizeof(output) - strlen(output) - 1);
-                }
-            }
-            strncat(output, "\n", sizeof(output) - strlen(output) - 1);
-            logger_write(output);
-            
-            // Send to network server
-            // if (network_client_send(output, strlen(output)) < 0) {
-            //     fprintf(stderr, "Failed to send keys to server\n");
-            // }
-        }
-        key_count = 0;  // Reset for next combination
-    }
-}
-
 int main(void) {
     char buf[1024];
-    unsigned long current_time;
-
     signal(SIGINT, handle_sigint);
 
     // Initialize network client
@@ -96,40 +54,19 @@ int main(void) {
     while (running) {
         int len = device_client_read(buf, sizeof(buf));
         if (len > 0) {
-            buf[len] = '\0';  // Ensure null termination
-            
-            // Get current time in milliseconds
-            current_time = (unsigned long)(clock() * 1000 / CLOCKS_PER_SEC);
-            
-            // Check if we need to process the current combination due to timeout
-            if (key_count > 0 && (current_time - last_key_time) > KEY_TIMEOUT) {
-                process_key_combination();
-            }
-            
-            // Add the new key to the buffer
-            if (key_count < MAX_KEYS) {
-                strncpy(key_buffer[key_count], buf, MAX_KEY_LEN - 1);
-                key_buffer[key_count][MAX_KEY_LEN - 1] = '\0';
-                key_count++;
-                last_key_time = current_time;
-                
-                // If we have a complete combination, process it
-                if (key_count >= MAX_KEYS) {
-                    process_key_combination();
-                }
-            }
-            
+            buf[len] = '\0'; 
             printf("Received: %s\n", buf);
+
+            // send to server
+            // if (network_client_send(output, strlen(output)) < 0) {
+            //     fprintf(stderr, "Failed to send keys to server\n");
+            // }
+
             fflush(stdout);
         } else if (len == 0) {
-            // No data available, sleep a bit
-            usleep(10000);  // 10ms
+            usleep(10000); 
         }
     }
-
-    // Process any remaining keys
-    process_key_combination();
-    
     logger_close();
     device_client_cleanup();
     // network_client_cleanup();

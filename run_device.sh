@@ -5,10 +5,6 @@ set -e
 KERNEL_DIR=kernel
 USER_DIR=user
 
-## clean file, module, device node
-# sudo rm -f /dev/keylogger
-sudo rmmod logkey
-
 echo "[*] Building kernel module (device version)..."
 make -C $KERNEL_DIR
 

