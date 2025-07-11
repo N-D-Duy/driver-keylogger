@@ -1,6 +1,7 @@
 CC      = gcc
 CFLAGS  = -Iinclude -Wall -O2
-LDFLAGS = 
+#wayland
+LDFLAGS = -lX11
 
 SRCDIR  = src
 OBJDIR  = obj
