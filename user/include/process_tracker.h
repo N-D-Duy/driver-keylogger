@@ -27,8 +27,4 @@ int process_tracker_get_window_title(char *title, size_t size);
 // Cleanup process tracker
 void process_tracker_cleanup(void);
 
-static int read_process_name(int pid, char *name, size_t size);
-
-static int read_process_cmdline(int pid, char *cmdline, size_t size);
-
 #endif // PROCESS_TRACKER_H 

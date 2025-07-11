@@ -1,12 +1,6 @@
 obj-m := logkey.o
 
-logkey-objs := \
-	src/device.o \
-	src/hide_module.o \
-	src/keylogger.o \
-	src/keymap.o \
-	src/ringbuf.o \
-	src/main.o
+logkey-objs := src/device.o src/hide_module.o src/keylogger.o src/keymap.o src/ringbuf.o src/main.o
 
 ccflags-y := -I$(PWD)/include
 
@@ -18,3 +12,8 @@ all:
 
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
+
+install:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules_install
+
+.PHONY: all clean install
