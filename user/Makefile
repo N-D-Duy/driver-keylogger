@@ -1,17 +1,18 @@
 CC      = gcc
 CFLAGS  = -Iinclude -Wall -O2
-LDFLAGS = 
+#wayland
+LDFLAGS = -lX11
 
 SRCDIR  = src
 OBJDIR  = obj
-TARGET  = logkey_client
+TARGET_DEVICE   = logkey_client
 
-SRCS    := $(wildcard $(SRCDIR)/*.c)
-OBJS    := $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(SRCS))
+SRCS_DEVICE     := $(filter-out $(SRCDIR)/main.c, $(wildcard $(SRCDIR)/*.c))
+OBJS_DEVICE     := $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(SRCS_DEVICE))
 
-all: $(TARGET)
+all: $(TARGET_DEVICE)
 
-$(TARGET): $(OBJS)
+$(TARGET_DEVICE): $(OBJS_DEVICE)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
@@ -21,6 +22,6 @@ $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
 clean:
-	rm -rf $(TARGET) $(OBJDIR)
+	rm -rf $(TARGET_DEVICE) $(OBJDIR)
 
 .PHONY: all clean
